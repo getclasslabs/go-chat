@@ -2,34 +2,37 @@ package main
 
 import (
 	"github.com/andrelrg/go-chat/internal"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/andrelrg/go-chat/internal/config"
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber/jaeger-client-go"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
-	jaegerlog "github.com/uber/jaeger-client-go/log"
+	jaegerConf "github.com/uber/jaeger-client-go/config"
+	jaegerLog "github.com/uber/jaeger-client-go/log"
 	"github.com/uber/jaeger-lib/metrics"
+	"gopkg.in/yaml.v2"
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
 
-	cfg := jaegercfg.Configuration{
+	cfg := jaegerConf.Configuration{
 		ServiceName: "go-chat",
-		Sampler:     &jaegercfg.SamplerConfig{
+		Sampler:     &jaegerConf.SamplerConfig{
 			Type:  jaeger.SamplerTypeConst,
 			Param: 1,
 		},
-		Reporter:    &jaegercfg.ReporterConfig{
-			LogSpans: true,
+		Reporter:    &jaegerConf.ReporterConfig{
+			LogSpans: false,
 		},
 	}
 
-	jLogger := jaegerlog.StdLogger
+	jLogger := jaegerLog.StdLogger
 	jMetricsFactory := metrics.NullFactory
 
 	tracer, closer, err := cfg.NewTracer(
-		jaegercfg.Logger(jLogger),
-		jaegercfg.Metrics(jMetricsFactory),
+		jaegerConf.Logger(jLogger),
+		jaegerConf.Metrics(jMetricsFactory),
 	)
 
 	if err != nil {
@@ -38,7 +41,21 @@ func main() {
 	opentracing.SetGlobalTracer(tracer)
 	defer closer.Close()
 
+	var config config.Config
+
+	f, err := os.Open("config.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	decoder := yaml.NewDecoder(f)
+	err = decoder.Decode(&config)
+	if err != nil {
+		panic(err)
+	}
+
 	s := internal.NewServer()
 	log.Println("waiting routes...")
-	log.Fatal(http.ListenAndServe(":8080", s.Router))
+	log.Fatal(http.ListenAndServe(config.Server.Port, s.Router))
 }
